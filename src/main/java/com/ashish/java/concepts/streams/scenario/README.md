@@ -1,122 +1,113 @@
-# Stream API Practice Scenarios
+# E-commerce Order Analytics & Anomaly Detection — Stream API Scenario
 
-A professional, interview-focused learning path for mastering the Java Stream API. The scenarios progress from fundamentals to advanced, reflecting real-world data processing tasks and common interview questions.
+A single, end-to-end scenario designed to practice advanced Java Stream API usage on realistic data. Build an analytics pipeline that ingests multiple sources, performs joins and reductions, computes KPIs, detects anomalies, and produces deterministic, interview-grade outputs.
 
-## Objectives
-- Build fluency with stream creation, intermediate operations, and terminal operations.
-- Apply collectors for reduction, grouping, partitioning, and mapping.
-- Design correct, efficient, and side-effect-free pipelines.
-- Handle files, large datasets, and performance considerations.
-- Recognize and avoid common pitfalls that impact correctness and scalability.
+## Context
+You operate a retail platform with customers purchasing products via orders. Each order has items, payments, and shipments. Separately, clickstream events capture customer behavior (views, cart adds, checkouts, purchases). The goal is to implement robust, efficient, and correct stream-based analytics.
 
-## Getting Started
-- Java 17 or later recommended.
-- Create package `com.ashish.java.concepts.streams` for domain models and exercises.
-- Place scenarios and solutions under `streams` and `streams.scenario`.
-- Run exercises via a main class or unit tests.
+## Data Sources (files under `src/main/resources/ecommerce`)
+- `customers.csv` — `id,name,region`
+- `products.csv` — `id,name,category,price`
+- `orders.csv` — `id,customerId,createdAt(ISO-8601),status`
+- `order_items.csv` — `orderId,productId,quantity,unitPrice`
+- `payments.csv` — `orderId,amount,method,status(OK|REFUND)`
+- `shipments.csv` — `orderId,warehouse,shippedAt(ISO-8601),deliveredAt(ISO-8601)`
+- `logs/events.log` (NDJSON) — `ts(ISO-8601),customerId,type(VIEW|ADD_TO_CART|CHECKOUT|PURCHASE),productId`
 
-## Dataset and Domain
-Use a simple `Employee` domain model for most exercises:
-- Fields: `id:int`, `name:String`, `department:String`, `salary:double`.
-- Departments: Engineering, Sales, HR.
-- Provide a static `sample()` list for reproducible results, plus utilities to generate larger lists.
+Notes
+- Treat all files as untrusted: rows may be malformed, missing fields, or contain invalid values.
+- Use lazy file streaming (e.g., `Files.lines`) and avoid loading entire files into memory.
 
-Optionally, prepare input files under `src/main/resources`, e.g., `employees.csv`, `events.log`, and `transactions.json`.
+## Scope
+Implement an analytics module that:
+- Parses inputs safely and reports invalid rows.
+- Joins orders with related entities into aggregates.
+- Computes business KPIs (revenue, top products, fulfillment latency, retention, funnels).
+- Benchmarks sequential vs parallel performance where safe.
+- Enforces determinism and correctness with clear tie-breakers and invariants.
 
-## Learning Path and Exercises
+## Functional Requirements
+1) Robust parsing and validation
+- Stream CSV/NDJSON lines; map to domain objects; filter or capture malformed rows.
+- Produce a small error report (counts per file; optionally sample offending lines).
 
-### 1. Fundamentals
-Covers creation, mapping, filtering, sorting, and reduction.
-1. Given a list of integers, return squares of even numbers, sorted descending. Compute sum and average.
-2. Tokenize a sentence into words; produce a frequency map of lowercase words. Sort by frequency, then alphabetically.
-3. Normalize names (trim, title-case) and deduplicate while preserving original insertion order.
-4. Compute sum, min, max, average, and count using `mapToInt`/`mapToDouble` and `summaryStatistics`.
-5. Validate inputs: filter out nulls and blanks safely using `Objects::nonNull` and `String#isBlank`.
+2) Order enrichment join
+- Build `OrderAggregate` for each order: join items, products, payments, shipments.
+- Resolve duplicates deterministically. Missing associations are allowed but must not crash the pipeline.
 
-### 2. Collectors and Reductions
-Focuses on `Collectors` composition and downstream collectors.
-1. Group employees by department and compute average salary per department.
-2. Partition employees into high earners vs others using a cutoff. Return counts per partition.
-3. Produce `Map<Department, List<String>>` of top 3 employee names by salary.
-4. Build `Map<String, Double>` of total salary spend per department using `summingDouble`.
-5. Create a `LinkedHashMap<String, Long>` of word frequencies sorted by descending count, then key, using `toMap` with custom merge and map supplier.
+3) Net revenue by region and day
+- Net revenue = Σ(items.quantity × unitPrice) − Σ(refunds).
+- Output: `Map<LocalDate, Map<String /*region*/, Double>>` with stable iteration order by date.
 
-### 3. Transformations and Joins
-Real-world collection joins and enrichments.
-1. Join employees with a list of projects on employee id; produce an assignment summary per department.
-2. Transform CSV rows to domain objects; filter invalid records; enrich with derived fields (e.g., seniority tier by salary).
-3. Build a report of departments with the number of distinct contributors per project.
-4. Create a lookup of `(department|name)` → `Employee` keeping the highest salary when duplicates occur (composite key deduplication).
+4) Top-5 products by net revenue per region (deterministic ties)
+- Comparator: revenue desc, then product name asc, then product id asc.
+- Output per region as an ordered map preserving the computed order.
 
-### 4. Custom Collectors and Advanced Reduction
-Deeper control over reduction and collector behavior.
-1. Implement a custom collector to produce salary stats: min, max, sum, average, count.
-2. Implement a collector that builds an immutable index `Map<String, Employee>` with defensive copies.
-3. Create a multi-bucket collector that groups salaries into ranges (e.g., `<100k`, `100–130k`, `>130k`) and counts occurrences.
+5) Fulfillment lead time analytics
+- For delivered orders, compute delivery lead time in hours `(deliveredAt − shippedAt)`.
+- For each warehouse: median and p90 lead time; identify outliers via z-score > 2.0.
 
-### 5. Files, I/O, and Streaming Large Data
-Lazy processing and resource safety.
-1. Stream `events.log` line-by-line; count lines containing "error" without loading the file into memory.
-2. Parse `employees.csv` with `Files.lines` and `split`, handling malformed rows. Produce a department salary summary.
-3. Extract the top 100 most frequent words from a large text corpus; output to `word_freq.csv`.
-4. Process NDJSON lines (one JSON object per line): filter, map to domain, aggregate metrics.
+6) Customer retention
+- Per region: fraction of customers with a second order within 30 days of first purchase.
+- Churned customers: no orders in the last 90 days relative to the max order date in data.
 
-### 6. Parallel Streams and Performance
-Measure and reason about parallelism.
-1. Compare sequential vs parallel processing when calculating aggregated salary stats for a large synthetic dataset (≥ 1,000,000 records). Capture timings.
-2. Identify sources of contention (e.g., synchronized collections) and refactor to avoid shared mutable state.
-3. Use `Collectors.groupingByConcurrent` where applicable; discuss trade-offs and correctness implications.
+7) Funnel from events.log
+- For each region, counts and conversion rates across VIEW → ADD_TO_CART → CHECKOUT → PURCHASE.
+- Purchase counts must not exceed checkout counts, etc.
 
-### 7. Correctness, Order, and Stability
-Make pipelines deterministic and safe.
-1. Contrast stateful vs stateless lambdas. Demonstrate why mutating external lists in `map`/`forEach` is incorrect.
-2. Ensure stable ordering for top-N queries by sorting with secondary keys and preserving encounter order with `toList()`.
-3. Use `distinct()` correctly for domain objects by defining `equals`/`hashCode` or deduplicating via keys.
-4. Handle `Optional` properly: chain `findFirst()`, `map()`, and `orElseThrow()` with clear failure messages.
+8) Parallel streams where safe
+- For large inputs, compare sequential vs parallel for revenue and top-5 calculations.
+- Use concurrent collectors where ordering is not required; document trade-offs.
 
-### 8. Statistics and Anomaly Detection
-Data insights beyond simple aggregations.
-1. Compute z-scores of salaries per department and flag employees above mean by more than two standard deviations.
-2. Compute median salary per department using two-pass strategy or balanced heaps.
-3. Identify departments where salary variance exceeds a threshold; sort by variance descending.
+9) Custom Top-K collector (stable)
+- Implement a collector that returns top K elements by comparator without materializing all elements.
+- Must be combiner-safe and return a stable, deterministic order.
 
-### 9. Testing and Validation
-Establish reliability with unit tests.
-1. Write JUnit tests for each exercise: happy path, edge cases (empty input, nulls, malformed lines).
-2. Property-based tests for frequency maps (sum of counts equals token count; invariant under whitespace changes).
-3. Deterministic ordering tests for top-N queries using fixed samples.
+10) Determinism and correctness
+- All outputs must be reproducible across runs; define and apply tie-breakers.
+- Pipelines must be free of external side effects.
 
-## Success Criteria
-- Correctness: pipelines produce expected outputs for happy paths and edge cases.
-- Determinism: results are stable and reproducible given the same inputs.
-- Efficiency: no unnecessary materialization; appropriate use of primitive streams and short-circuiting.
-- Safety: no shared mutable state; resources closed via try-with-resources or stream-managed closing.
+## Acceptance Criteria
+- Parsing: invalid rows are excluded and reported; counts of parsed vs invalid match file contents.
+- Revenue: totals equal Σ(order item subtotals) minus Σ(refunds); zero when only refunds exist for an order.
+- Top-5 per region: sorted by revenue desc, name asc, id asc; iteration order deterministic.
+- Lead time: median and p90 computed per warehouse; outliers flagged via z-score > 2.0; empty groups handled safely.
+- Retention: repeat purchase rate = fraction with a second order within 30 days; churn excludes customers with any order in last 90 days.
+- Funnel: PURCHASE ≤ CHECKOUT ≤ ADD_TO_CART ≤ VIEW per region; conversion rates in [0,1].
+- Parallel equivalence: aggregates equal between sequential and parallel (ignoring order where concurrency is used).
+- Custom Top-K: matches baseline sort+limit results; finisher returns a stable list.
+
+## Non-Functional Requirements
+- Efficiency: avoid unnecessary materialization; prefer primitive streams for numeric reductions.
+- Resource safety: close files via try-with-resources or stream-managed auto-close.
+- Scalability: demonstrate performance on ≥1M synthetic records; document thresholds where parallel outperforms sequential.
+- Determinism: never rely on incidental ordering; always use explicit comparators and `LinkedHashMap` when order matters.
 
 ## Implementation Notes
-- Prefer stateless lambdas and pure functions.
-- Choose `mapToInt`/`mapToDouble` for numeric reductions to avoid boxing overhead.
-- Use `collectingAndThen` for post-processing when needed.
-- For sorting maps by values, build entries stream and collect back to a `LinkedHashMap`.
-- Avoid side effects inside `map`/`filter`; use `peek` only for debugging.
-- Validate input lines in file scenarios; log or collect invalid rows for reporting.
+- Build lookup structures up front (e.g., `productsById`, `customersById`, `itemsByOrderId`, `paymentsByOrderId`).
+- Use `Collectors.teeing(summarizingDouble, counting, combiner)` to produce combined summaries efficiently.
+- For windowed comparisons (e.g., retention timelines), zip indices with `IntStream.range` and compare neighbors.
+- Median: for small groups, sort and select; for larger streams, use a two-heap helper.
+- Prefer `mapToInt/Long/Double` for numeric ops; avoid boxing when aggregating.
+- Use `toMap` with a merge function and `LinkedHashMap::new` when preserving encounter order is required.
+- Keep functions pure; use `peek` only for transient debugging.
 
-## Sample Outputs
-- Average salary by department: `{Engineering=140500.0, Sales=104333.3, HR=87666.7}`.
-- Top 3 names per department: `{Engineering=[Eve, Alice, Ivan], Sales=[Heidi, Frank, Cathy], HR=[Grace, Judy, Dan]}`.
-- Word frequencies: sorted list with counts and cumulative totals.
-
-## Extension Ideas
-- Introduce `Project`, `Assignment`, and `Team` domain models; practice multi-way joins.
-- Add caching/memoization for expensive derived fields; discuss placement outside streams.
-- Explore `Stream.iterate` and `Stream.generate` for synthetic data and performance experiments.
-
-## How to Run
-- Implement scenarios in classes under `streams` and invoke them from a `main` method.
-- For file-based scenarios, add input files to `src/main/resources` and pass relative paths.
-- Use IDE run configurations or a build tool to execute and observe results.
+## Suggested Package Layout
+`src/main/java/com/ashish/java/concepts/streams/scenario/ecommerce`
+- `domain/` — `Customer`, `Product`, `Order`, `OrderItem`, `Payment`, `Shipment`, `Event`
+- `aggregate/` — `OrderAggregate`, `RevenueSummary`, `TopProduct`, `LeadTimeStats`
+- `io/` — CSV/NDJSON loaders using `Files.lines`
+- `analytics/` — pure functions implementing requirements 3–10
+- `EcommerceAnalyticsScenario` — minimal runner for manual checks
 
 ## Deliverables
-- Domain models and utilities for sample data.
-- Scenario implementations and unit tests.
-- Optional scripts to generate large synthetic datasets for performance testing.
+- Domain and aggregate classes; loader utilities; analytics functions; scenario runner.
+- A small error report for parsing (counts + optional samples).
+- Unit tests covering happy paths, edge cases (empty/malformed/duplicates), and determinism.
+- Optional property-based tests for invariants (e.g., `min ≤ avg ≤ max`, frequency sums, Top-K equivalence).
 
+## Stretch Goals
+- Category seasonality: apply `takeWhile`/`dropWhile` on date-sorted metrics.
+- Use `mapMulti` to emit zero/one/many derived records from events/items efficiently.
+- Deterministic top-100 words from clickstream payloads with bounded memory and `Files.lines`.
+- Cohort LTV by signup month with stable grouping and bounded-memory Top-K.
