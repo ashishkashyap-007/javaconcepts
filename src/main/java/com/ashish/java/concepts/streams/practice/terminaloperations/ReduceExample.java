@@ -1,4 +1,4 @@
-package com.ashish.java.concepts.streams.practice;
+package com.ashish.java.concepts.streams.practice.terminaloperations;
 
 import java.util.Arrays;
 

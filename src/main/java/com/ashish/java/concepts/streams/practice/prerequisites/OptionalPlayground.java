@@ -1,4 +1,4 @@
-package com.ashish.java.concepts.streams.practice;
+package com.ashish.java.concepts.streams.practice.prerequisites;
 
 import java.util.Optional;
 

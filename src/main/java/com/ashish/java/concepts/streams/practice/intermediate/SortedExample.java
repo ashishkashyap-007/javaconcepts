@@ -1,4 +1,4 @@
-package com.ashish.java.concepts.streams.practice;
+package com.ashish.java.concepts.streams.practice.intermediate;
 
 import java.util.Comparator;
 import java.util.List;
