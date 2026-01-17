@@ -1,0 +1,1 @@
+writing to example.txt using FileWriter
